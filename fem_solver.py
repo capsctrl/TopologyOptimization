@@ -200,19 +200,21 @@ def compute_sensitivity(
     Compute dJ/dρ_e = −p·ρ_e^(p−1)·(E0−E_min)·λ_eᵀ·Ke0·u_e for each element.
     Returns (nely, nelx) sensitivity array.
     """
-    dof_map = fem_setup.dof_map
-    Ke0 = fem_setup.Ke0
+    # Retrieve known data from the FEM setup
+    dof_map = fem_setup.dof_map #Map, each pixel has 8 values for indexes of correspoinding DOFs
+    Ke0 = fem_setup.Ke0 #Single element stiffness matrix at unit Young's modulus
 
-    rho_flat = density_matrix.ravel()
-    dE_drho = penal * rho_flat**(penal - 1) * (E0 - E_min)  # (n_elem,)
 
-    u_elem   = primal.u[dof_map]  # (n_elem, 8)
-    lam_elem = adjoint[dof_map]   # (n_elem, 8)
+    rho_flat = density_matrix.ravel() #Flatten density matrix to (nelem,)
+    dE_drho = penal * rho_flat**(penal - 1) * (E0 - E_min)  # Derivative of SIMP, neccesary for density to correctly affect stiffness
 
-    # λ_eᵀ Ke0 u_e computed for all elements at once
-    cross = np.einsum('ei,ij,ej->e', lam_elem, Ke0, u_elem)  # (n_elem,)
+    u_elem   = primal.u[dof_map]  # (n_elem, 8) element-wise displacement vectors from FEM
+    lam_elem = adjoint[dof_map]   # (n_elem, 8) element-wise adjoint vectors from adjoint solve, black magic
 
-    return (-dE_drho * cross).reshape(fem_setup.nely, fem_setup.nelx)
+    # λ_eᵀ Ke0 u_e computed for all elements at once, black magic formula for finding sensitivity
+    sensitivity = np.einsum('ei,ij,ej->e', lam_elem, Ke0, u_elem)  # (n_elem,)
+    sensitivity = (-dE_drho * sensitivity).reshape(fem_setup.nely, fem_setup.nelx)
+    return sensitivity
 
 
 def compute_objective(
