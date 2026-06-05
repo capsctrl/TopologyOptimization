@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.sparse import csr_matrix
 from fem_solver import (
     setup_fem,
     solve_primal,
@@ -9,6 +10,33 @@ from fem_solver import (
     compute_sensitivity,
     compute_objective,
 )
+
+
+def precompute_filter(nelx, nely, r_min):
+    """
+    Build the filter weight matrix H where H[k, i] = max(0, r_min - dist(k, i)).
+    dist is the centre-to-centre distance between elements k and i in element units.
+    Returns a sparse (n_elem, n_elem) matrix. Computed once before the loop.
+    """
+    er, ec = np.meshgrid(np.arange(nely), np.arange(nelx), indexing='ij')
+    er = er.ravel().astype(float)
+    ec = ec.ravel().astype(float)
+    dist = np.sqrt((er[:, None] - er[None, :])**2 + (ec[:, None] - ec[None, :])**2)
+    H = np.maximum(0.0, r_min - dist)
+    return csr_matrix(H)
+
+
+def _apply_filter(sens, rho, H):
+    """
+    Apply sensitivity filter (eq. 1.27-1.28):
+        sens_filtered[k] = (sum_i H[k,i] * rho[i] * sens[i])
+                           / (rho[k] * sum_i H[k,i])
+    """
+    rho_flat  = rho.ravel()
+    sens_flat = sens.ravel()
+    Hs = np.asarray(H.sum(axis=1)).ravel()          # sum of weights per row
+    filtered = H @ (rho_flat * sens_flat) / Hs / np.maximum(1e-3, rho_flat)
+    return filtered.reshape(rho.shape)
 
 
 def give_output(density, sensitivity, objective, volume_fraction, iteration):
@@ -71,6 +99,7 @@ def optimize_topology(
     tol=0.01,
     move=0.2,
     eta=0.5,
+    r_min=1.5,    # filter radius in element units; None disables filtering
 ):
     """
     Minimize sum_i w_i * ||u^P_i||^2 subject to sum(rho_e) <= alpha * n_elem.
@@ -83,6 +112,7 @@ def optimize_topology(
     Returns: density (nely, nelx), sensitivity (nely, nelx), objective J, volume fraction
     """
     fem_setup = setup_fem(nelx, nely, E0, nu)
+    H = precompute_filter(nelx, nely, r_min) if r_min is not None else None
 
     # Convert constrained node mask → constrained DOF indices (both x and y per node)
     node_indices = np.where(constrained_nodes.ravel() == 1)[0]
@@ -124,6 +154,9 @@ def optimize_topology(
             w = lc.get('weight', 1.0)
             total_sens += w * sens
             total_obj += compute_objective(primal, loaded_dofs, weight=w)
+
+        if H is not None:
+            total_sens = _apply_filter(total_sens, rho, H)
 
         # ── Searches different lagrange multipliers, and updates density using move, eta and lagrange multiplier to preserve volume ────────────────────────────────────────────────
         rho = _oc_update(

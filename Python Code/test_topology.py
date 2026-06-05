@@ -21,19 +21,7 @@ def make_give_output(preserve, obstacle):
     Replaces the default give_output in topology_optimizer for each test.
     """
     def give_output(density, _, objective, volume_fraction, iteration):
-        plt.clf()
-        ax = plt.gca()
-        ax.imshow(density, cmap='gray_r', vmin=0, vmax=1, origin='upper')
-
-        overlay = np.zeros((*density.shape, 4))          # RGBA, all transparent
-        overlay[obstacle == 1] = [0.9, 0.1, 0.1, 0.5]  # red for void obstacle
-        overlay[preserve == 1] = [0.1, 0.8, 0.1, 0.5]  # green for forced solid
-        ax.imshow(overlay, origin='upper')
-
-        ax.set_title(
-            f'Iter {iteration}  |  J = {objective:.4e}  |  V = {volume_fraction:.3f}'
-        )
-        plt.pause(0.01)
+       # LOVABLE - FILL IN WHATEVER CODE IS NECCESARY HERE TO VISUALIZE IN REAL TIME!
 
     return give_output
 
